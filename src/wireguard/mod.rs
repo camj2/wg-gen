@@ -3,18 +3,20 @@ pub const WG_DEFAULT_KEEP_ALIVE: u16 = 25;
 pub const WG_DEFAULT_MTU: u16 = 1420;
 
 pub mod crypto;
-// pub mod fs;
 pub mod net;
 
 // use std::fmt::Write;
 
 // use std::collections::HashMap;
 use std::collections::BTreeMap;
+// use std::fmt::Display;
+use std::fmt;
 
 use std::fs;
 use std::fs::File;
 use std::io::Write;
-use std::path::PathBuf;
+use std::path::Path;
+// use std::path::PathBuf;
 
 use net::Ipv6Prefix;
 
@@ -25,41 +27,6 @@ use serde_json;
 use wireguard_keys::{Privkey as PrivateKey, Secret as PresharedKey};
 
 use anyhow::{Context, Result};
-
-// #[derive(Serialize, Deserialize)]
-// pub struct WireGuardConfig {
-//
-
-//     // Meta
-//     // Thought: List peers with '-l' and add/delete with '--add' '--delete'.
-//     pub id: u64,
-//     pub peer: String,
-
-//     // [Interface]
-//     interface: Interface,
-
-//     // [Peer]
-//     peers: Vec<Peer>,
-// }
-
-// #[derive(Serialize, Deserialize)]
-// struct Interface {
-//     private_key: String,         // PrivateKey (Fix: Use byte slice array.)
-//     address: IpPrefix,           // Address
-//     dns: Option<IpAddr>,         // DNS (Fix: Only include octets, not len.)
-//     listening_port: Option<u16>, // ListenPort
-//     mtu: Option<u16>,            // MTU
-//     firewall_mark: Option<u32>,  // FwMark
-// }
-
-// #[derive(Serialize, Deserialize)]
-// struct Peer {
-//     public_key: String,       // PublicKey
-//     preshared_key: String,    // PresharedKey
-//     allowed_ips: IpPrefix,    // AllowedIPs
-//     endpoint: Option<String>, // Endpoint
-//     keep_alive: Option<u16>,  // PersistentKeepalive
-// }
 
 #[derive(Serialize, Deserialize)]
 pub struct Config {
@@ -87,46 +54,72 @@ struct Peer {
     mtu: Option<u16>,
 }
 
-impl Config {
-    // Generate basic config from list of pseudo names. Good starting point.
-    pub fn from(names: Vec<String>) -> Self {
-        let mut peers: BTreeMap<u64, Peer> = BTreeMap::new();
+impl fmt::Display for Config {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut first = true;
 
-        let mut id: u64 = 0;
+        for (id, peer) in &self.peers {
+            if !first {
+                write!(f, "\n")?;
+            }
+            first = false;
 
-        for name in names {
-            let private_key = PrivateKey::generate();
-            let preshared_key = PresharedKey::generate();
-
-            let peer = Peer {
-                name,
-                private_key,
-                preshared_key,
-                endpoint: None,
-                listen_port: None,
-                persistent_keepalive_interval: None,
-                fwmark: None,
-                mtu: None,
-            };
-            peers.insert(id, peer);
-
-            id += 1;
+            write!(f, "{}: {}", id, peer.name)?;
         }
 
+        Ok(())
+    }
+}
+
+impl Config {
+    pub fn new() -> Self {
         let prefix = Ipv6Prefix::new().generate_ula().generate_network();
+
+        let peers: BTreeMap<u64, Peer> = BTreeMap::new();
 
         Self { prefix, peers }
     }
 
-    pub fn from_path(path: PathBuf) -> Result<Self> {
-        let contents = fs::read_to_string(&path)?;
+    pub fn add<T: ToString>(&mut self, name: T) -> Result<()> {
+        // Find lowest next available entry. Bail if none left.
+        let id = (u64::MIN..u64::MAX)
+            .into_iter()
+            .find(|k| !self.peers.contains_key(k))
+            .context("Too many peers. Whoa.")?;
 
-        let config: Self = serde_json::from_str(&contents)?;
+        let private_key = PrivateKey::generate();
+        let preshared_key = PresharedKey::generate();
+
+        let peer = Peer {
+            name: name.to_string(),
+            private_key,
+            preshared_key,
+            endpoint: None,
+            listen_port: None,
+            persistent_keepalive_interval: None,
+            fwmark: None,
+            mtu: None,
+        };
+        self.peers.insert(id, peer);
+
+        Ok(())
+    }
+
+    pub fn del<T: ToString>(&mut self, name: T) -> Result<()> {
+        self.peers.retain(|_, peer| peer.name != name.to_string());
+
+        Ok(())
+    }
+
+    pub fn from(path: &Path) -> Result<Self> {
+        let file_contents = fs::read_to_string(&path)?;
+
+        let config: Self = serde_json::from_str(&file_contents)?;
 
         Ok(config)
     }
 
-    pub fn write(&self, path: PathBuf) -> Result<()> {
+    pub fn write(&self, path: &Path) -> Result<()> {
         let json = serde_json::to_string_pretty(&self)?;
 
         fs::write(&path, &json)?;
@@ -134,13 +127,13 @@ impl Config {
         Ok(())
     }
 
-    // todo: use Display trait instead?
-    pub fn export(&self, path: PathBuf) -> Result<()> {
+    pub fn export(&self, path: &Path) -> Result<()> {
         // First peer is considered the "server" peer, remainder are "client" peers.
         let server = self
             .peers
-            .get(&0)
+            .get(&u64::MIN)
             .context("Peer with index of 0 not found.")?;
+        // TO-DO: Check for duplicate names!
 
         // Create export directory
         fs::create_dir_all(&path)?;
@@ -155,7 +148,7 @@ impl Config {
         writeln!(server_config, "PrivateKey = {}", server.private_key)?;
 
         // Address
-        writeln!(server_config, "Address = {}", self.prefix.int(0))?;
+        writeln!(server_config, "Address = {}", self.prefix.int(0))?; // TO-DO: get id rather than assuming zero!
 
         // ListenPort
         if let Some(v) = server.listen_port {

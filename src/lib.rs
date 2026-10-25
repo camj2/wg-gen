@@ -8,36 +8,56 @@ use cli::Args;
 pub fn run() -> anyhow::Result<()> {
     let args = Args::get();
 
+    // Generate prefix, print and exit.
     if args.generate {
         let prefix = Ipv6Prefix::new().generate_ula();
         println!("{}", prefix);
         return Ok(());
     }
 
-    if !args.names.is_empty() {
-        let config = Config::from(args.names);
-        
-        if args.export {
-            config.export(args.output)?;
-            println!("Successfully exported peers!");
-        } else {
-            if args.config.exists() {
-                eprintln!("Already generated peers.");
-                return Ok(());
-            }
-            config.write(args.config)?;
-            println!("Successfully generated peers!");
+    // Deserialize existing config file, otherwise initialize new config.
+    let mut config = if args.config.exists() {
+        Config::from(&args.config)?
+    } else {
+        Config::new()
+    };
+
+    // Add named peers to config.
+    for name in args.names {
+        config.add(&name)?;
+        println!("Added '{}'.", &name);
+    }
+
+    // Add unnamed peers to config.
+    for total in args.total {
+        let range = u64::MIN..total;
+
+        for name in range {
+            config.add(&name)?;
+            println!("Added '{}'.", &name);
         }
-        return Ok(());
     }
 
+    // Delete peers.
+    for name in args.delete {
+        config.del(&name)?;
+        println!("Deleted '{}'.", &name);
+    }
+
+    // Display config.
+    println!("{}", &config);
+
+    // Save config file.
+    if args.write {
+        config.write(&args.config)?;
+        println!("Successfully generated peers!");
+    }
+
+    // Generate WireGuard config files.
     if args.export {
-        let config = Config::from_path(args.config)?;
-        config.export(args.output)?;
+        config.export(&args.output)?;
         println!("Successfully exported peers!");
-        return Ok(());
     }
 
-    eprintln!("Nothing to do.");
     Ok(())
 }

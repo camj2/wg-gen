@@ -41,9 +41,8 @@ Set additional options in [`wireguard.json`](doc/wireguard.json) and export:
 wg-gen -e
 ```
 
-[`wireguard.conf`](doc/wireguard/wireguard.conf) is the "server" peer, remainder are "client" peers.
-
-[`unbound.conf`](doc/wireguard/unbound.conf) is for Unbound.
+[`wireguard.conf`](doc/wireguard/wireguard.conf) and [`unbound.conf`](doc/wireguard/unbound.conf)
+are the "server" peer, remainder are "client" peers.
 
 ## Help
 
