@@ -1,5 +1,5 @@
 [package]
-name = "wg-rs"
+name = "wg-gen"
 version = "0.1.0"
 description = "Generate WireGuard config files."
 authors = ["Cameron Jackson <dev@camj.me>"]
