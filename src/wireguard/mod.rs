@@ -8,18 +8,23 @@ pub mod net;
 
 // use std::fmt::Write;
 
+// use std::collections::HashMap;
+use std::collections::BTreeMap;
+
 use std::fs;
 use std::fs::File;
 use std::io::Write;
 use std::path::PathBuf;
 
-use net::{IpAddr, IpPrefix, Ipv4Addr, Ipv4Prefix, Ipv6Addr, Ipv6Prefix};
+use net::Ipv6Prefix;
 
 use serde::{Deserialize, Serialize};
 use serde_json;
 
 // use crypto::{KeyPair, KeySecret};
-use wireguard_keys::{Privkey as PrivateKey, Pubkey as PublicKey, Secret as PresharedKey};
+use wireguard_keys::{Privkey as PrivateKey, Secret as PresharedKey};
+
+use anyhow::{Context, Result};
 
 // #[derive(Serialize, Deserialize)]
 // pub struct WireGuardConfig {
@@ -58,31 +63,23 @@ use wireguard_keys::{Privkey as PrivateKey, Pubkey as PublicKey, Secret as Presh
 
 #[derive(Serialize, Deserialize)]
 pub struct Config {
+    // Network
     prefix: Ipv6Prefix,
-    peers: Vec<Peer>,
+
+    // Peers
+    peers: BTreeMap<u64, Peer>,
 }
 
 #[derive(Serialize, Deserialize)]
 struct Peer {
-    meta: Meta,
-    access: Access,
-    network: Network,
-}
-
-#[derive(Serialize, Deserialize)]
-struct Meta {
+    // Meta
     name: String,
-    id: u64,
-}
 
-#[derive(Serialize, Deserialize)]
-struct Access {
+    // Keys
     key: PrivateKey,
     psk: PresharedKey,
-}
 
-#[derive(Serialize, Deserialize)]
-struct Network {
+    // Network
     endpoint: Option<String>,
     listen_port: Option<u16>,
     keep_alive: Option<u16>,
@@ -93,7 +90,7 @@ struct Network {
 impl Config {
     // Generate basic config from list of pseudo names. Good starting point.
     pub fn from(names: Vec<String>) -> Self {
-        let mut peers: Vec<Peer> = Vec::new();
+        let mut peers: BTreeMap<u64, Peer> = BTreeMap::new();
 
         let mut id: u64 = 0;
 
@@ -102,17 +99,16 @@ impl Config {
             let psk = PresharedKey::generate();
 
             let peer = Peer {
-                meta: Meta { name, id },
-                access: Access { key, psk },
-                network: Network {
-                    endpoint: None,
-                    listen_port: None,
-                    keep_alive: None,
-                    fw_mark: None,
-                    mtu: None,
-                },
+                name,
+                key,
+                psk,
+                endpoint: None,
+                listen_port: None,
+                keep_alive: None,
+                fw_mark: None,
+                mtu: None,
             };
-            peers.push(peer);
+            peers.insert(id, peer);
 
             id += 1;
         }
@@ -128,101 +124,181 @@ impl Config {
         }
     }
 
-    pub fn from_path(path: PathBuf) -> Self {
-        let contents = fs::read_to_string(&path).unwrap();
+    pub fn from_path(path: PathBuf) -> Result<Self> {
+        let contents = fs::read_to_string(&path)?;
 
-        let config: Self = serde_json::from_str(&contents).unwrap();
+        let config: Self = serde_json::from_str(&contents)?;
 
-        config
+        Ok(config)
     }
 
-    pub fn write(&self, path: PathBuf) {
-        let json = serde_json::to_string_pretty(&self).unwrap();
+    pub fn write(&self, path: PathBuf) -> Result<()> {
+        let json = serde_json::to_string_pretty(&self)?;
 
-        fs::write(&path, &json).expect("file should exist");
+        fs::write(&path, &json)?;
+
+        Ok(())
     }
 
     // todo: use Display trait instead?
-    pub fn export(&self, path: PathBuf) {
-        fs::create_dir_all(&path).unwrap();
-
-        // Unbound WireGuard config
-        let mut unbound_config = File::create(path.join("unbound.conf")).unwrap();
-
+    pub fn export(&self, path: PathBuf) -> Result<()> {
         // First peer is considered the "server" peer, remainder are "client" peers.
-        let mut server_config = File::create(path.join("wireguard.conf")).unwrap();
+        let server = self
+            .peers
+            .get(&0)
+            .context("Peer with index of 0 not found.")?;
 
-        for peer in &self.peers {
-            if peer.meta.id == 0 {
-                // [Interface]
-                writeln!(server_config, "[Interface]").expect("write to string");
+        // Create export directory
+        fs::create_dir_all(&path)?;
 
-                // PrivateKey
-                writeln!(server_config, "PrivateKey = {}", peer.access.key)
-                    .expect("write to string");
+        // Server WireGuard config file
+        let mut server_config = File::create(path.join("wireguard.conf"))?;
 
-                // Address
-                let prefix = self.prefix.addr(peer.meta.id);
-                // let prefix = match self.prefix {
-                //     IpPrefix::V4(prefix) => prefix.address(peer.meta.id),
-                //     IpPrefix::V6(prefix) => prefix.address(peer.meta.id),
-                // };
-                writeln!(server_config, "Address = {}", prefix).expect("write to string");
+        // [Interface]
+        writeln!(server_config, "[Interface]")?;
 
-                // ListenPort
-                if let Some(port) = peer.network.listen_port {
-                    writeln!(server_config, "ListenPort = {}", port).expect("write to string");
-                }
+        // PrivateKey
+        writeln!(server_config, "PrivateKey = {}", server.key)?;
 
-                // FwMark
-                if let Some(mark) = peer.network.fw_mark {
-                    writeln!(server_config, "FwMark = {}", mark).expect("write to string");
-                }
+        // Address
+        let prefix = self.prefix.int(0);
+        writeln!(server_config, "Address = {}", prefix)?;
 
-                // MTU
-                if let Some(mtu) = peer.network.mtu {
-                    writeln!(server_config, "MTU = {}", mtu).expect("write to string");
-                }
+        // ListenPort
+        if let Some(port) = server.listen_port {
+            writeln!(server_config, "ListenPort = {}", port)?;
+        }
 
+        // FwMark
+        if let Some(mark) = server.fw_mark {
+            writeln!(server_config, "FwMark = {}", mark)?;
+        }
+
+        // MTU
+        if let Some(mtu) = server.mtu {
+            writeln!(server_config, "MTU = {}", mtu)?;
+        }
+
+        // Server Unbound config file
+        let mut unbound_config = File::create(path.join("unbound.conf"))?;
+
+        // Unbound
+        writeln!(unbound_config, "# {}", server.name)?;
+
+        // AAAA Record
+        writeln!(
+            unbound_config,
+            "local-data: '{} AAAA {}'",
+            server.name,
+            self.prefix.int(0).addr
+        )?;
+
+        // PTR Record
+        writeln!(
+            unbound_config,
+            "local-data-ptr: '{} {}'",
+            self.prefix.int(0).addr,
+            server.name,
+        )?;
+
+        for (id, peer) in &self.peers {
+            if *id == 0 {
                 continue;
             }
 
-            let name = format!("{}-{}.conf", peer.meta.id, peer.meta.name);
-            let mut config = File::create(&path.join(name)).unwrap();
+            let name = format!("{}-{}.conf", id, peer.name);
+
+            // Client WireGuard config file
+            let mut config = File::create(&path.join(name))?;
+
+            // TO-DO:
+            // Client WireGuard QR code file
+            // let mut config = File::create(&path.join(name))?;
 
             // [Interface]
-            writeln!(config, "[Interface]").expect("write to string");
+            writeln!(config, "[Interface]")?;
 
             // PrivateKey
-            writeln!(config, "PrivateKey = {}", peer.access.key).expect("write to string");
+            writeln!(config, "PrivateKey = {}", peer.key)?;
 
             // Address
-            writeln!(config, "Address = {}", self.prefix.addr(peer.meta.id)).expect("write to string");
+            writeln!(config, "Address = {}", self.prefix.int(*id))?;
+
+            // DNS
+            writeln!(config, "DNS = {}", self.prefix.int(0).addr)?;
+
+            // ListenPort
+            if let Some(port) = peer.listen_port {
+                writeln!(config, "ListenPort = {}", port)?;
+            }
+
+            // FwMark
+            if let Some(mark) = peer.fw_mark {
+                writeln!(config, "FwMark = {}", mark)?;
+            }
+
+            // MTU
+            if let Some(mtu) = peer.mtu {
+                writeln!(config, "MTU = {}", mtu)?;
+            }
+
+            // [Peer]
+            writeln!(config, "\n[Peer]")?;
+
+            // PublicKey
+            writeln!(config, "PublicKey = {}", server.key.pubkey())?;
+
+            // PresharedKey
+            writeln!(config, "PresharedKey = {}", peer.psk)?;
+
+            // AllowedIPs
+            writeln!(config, "AllowedIPs = {}", self.prefix)?;
+
+            // Endpoint
+            if let Some(endpoint) = &server.endpoint {
+                writeln!(config, "Endpoint = {}", endpoint)?;
+            }
+
+            // Server
+
+            // [Peer]
+            writeln!(server_config)?;
+            writeln!(server_config, "# {}", peer.name)?;
+            writeln!(server_config, "[Peer]")?;
+
+            // PublicKey
+            writeln!(server_config, "PublicKey = {}", peer.key.pubkey())?;
+
+            // PresharedKey
+            writeln!(server_config, "PresharedKey = {}", peer.psk)?;
+
+            // AllowedIPs
+            writeln!(server_config, "AllowedIPs = {}", self.prefix.int(*id))?;
+
+            // Endpoint
+            if let Some(endpoint) = &peer.endpoint {
+                writeln!(server_config, "Endpoint = {}", endpoint)?;
+            }
+
+            // Unbound
+            writeln!(unbound_config, "\n# {}", peer.name)?;
+
+            // AAAA Record
+            writeln!(
+                unbound_config,
+                "local-data: '{} AAAA {}'",
+                peer.name,
+                self.prefix.int(*id).addr
+            )?;
+
+            // PTR Record
+            writeln!(
+                unbound_config,
+                "local-data-ptr: '{} {}'",
+                self.prefix.int(*id).addr,
+                peer.name,
+            )?;
         }
+        Ok(())
     }
-
-    // pub fn write(&self) {
-    //     // Serialize Config struct to JSON file
-    // }
-    // pub fn export(&self) {
-    //     // First peer is considered the "server" peer, remainder are "client" peers.
-    // }
-}
-
-struct WireGuardConfig {
-    interface: WireGuardInterface,
-
-    peers: Vec<WireGuardPeer>,
-}
-struct WireGuardInterface {
-    private_key: String,
-    listen_port: Option<u16>,
-    fw_mark: u32,
-}
-struct WireGuardPeer {
-    public_key: PublicKey,
-    secret_key: PresharedKey,
-    allowed_ips: IpPrefix,
-    endpoint: Option<String>,
-    keep_alive: Option<u16>,
 }

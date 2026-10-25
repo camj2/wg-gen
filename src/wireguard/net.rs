@@ -5,7 +5,6 @@ use std::fmt;
 use serde::{Deserialize, Serialize};
 
 use rand::Rng;
-use rand::rngs::ThreadRng;
 
 // #[derive(Deserialize, Serialize)]
 // pub struct Ipv4Addr {
@@ -25,6 +24,7 @@ use rand::rngs::ThreadRng;
 
 #[derive(Deserialize, Serialize)]
 pub struct Ipv4Prefix {
+    // TO-DO: make following private not public like in std::net, getter function(s)
     pub addr: Ipv4Addr,
     pub len: u8,
 }
@@ -116,11 +116,11 @@ impl Ipv6Prefix {
     }
 
     // Set interface identifier.
-    pub fn addr(&self, id: u64) -> Self {
+    pub fn int(&self, int: u64) -> Self {
         let mut octets = self.addr.octets();
-        let interface = id.to_be_bytes(); // "be", "le", "ne" (https://en.wikipedia.org/wiki/Endianness)
 
-        octets[8..].copy_from_slice(&interface);
+        // "be", "le", "ne" (https://en.wikipedia.org/wiki/Endianness)
+        octets[8..].copy_from_slice(&int.to_be_bytes());
 
         Self {
             addr: Ipv6Addr::from(octets),

@@ -1,6 +1,6 @@
 // TO-DO: Write own crypto generator instead of using external crate.
 // https://www.reddit.com/r/WireGuard/comments/zsjrsx/technical_difference_between_psk_and_private_key/
-use wireguard_keys::{Privkey as PrivateKey, Pubkey as PublicKey, Secret as PresharedKey};
+use wireguard_keys::{Privkey as PrivateKey, Secret as PresharedKey};
 
 // Asymmetric
 pub struct KeyPair {
