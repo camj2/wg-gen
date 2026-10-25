@@ -28,7 +28,7 @@ use anyhow::{Context, Result};
 
 // #[derive(Serialize, Deserialize)]
 // pub struct WireGuardConfig {
-//     // This is all we need for a basic interconnected roaming network. See `man 8 wg wg-quick`.
+//
 
 //     // Meta
 //     // Thought: List peers with '-l' and add/delete with '--add' '--delete'.
@@ -76,14 +76,14 @@ struct Peer {
     name: String,
 
     // Keys
-    key: PrivateKey,
-    psk: PresharedKey,
+    private_key: PrivateKey,
+    preshared_key: PresharedKey,
 
     // Network
     endpoint: Option<String>,
     listen_port: Option<u16>,
-    keep_alive: Option<u16>,
-    fw_mark: Option<u32>,
+    persistent_keepalive_interval: Option<u16>,
+    fwmark: Option<u32>,
     mtu: Option<u16>,
 }
 
@@ -95,17 +95,17 @@ impl Config {
         let mut id: u64 = 0;
 
         for name in names {
-            let key = PrivateKey::generate();
-            let psk = PresharedKey::generate();
+            let private_key = PrivateKey::generate();
+            let preshared_key = PresharedKey::generate();
 
             let peer = Peer {
                 name,
-                key,
-                psk,
+                private_key,
+                preshared_key,
                 endpoint: None,
                 listen_port: None,
-                keep_alive: None,
-                fw_mark: None,
+                persistent_keepalive_interval: None,
+                fwmark: None,
                 mtu: None,
             };
             peers.insert(id, peer);
@@ -115,13 +115,7 @@ impl Config {
 
         let prefix = Ipv6Prefix::new().generate_ula().generate_network();
 
-        // let address = prefix.address(1);
-
-        Self {
-            // prefix: IpPrefix::V6(prefix),
-            prefix,
-            peers,
-        }
+        Self { prefix, peers }
     }
 
     pub fn from_path(path: PathBuf) -> Result<Self> {
@@ -158,25 +152,24 @@ impl Config {
         writeln!(server_config, "[Interface]")?;
 
         // PrivateKey
-        writeln!(server_config, "PrivateKey = {}", server.key)?;
+        writeln!(server_config, "PrivateKey = {}", server.private_key)?;
 
         // Address
-        let prefix = self.prefix.int(0);
-        writeln!(server_config, "Address = {}", prefix)?;
+        writeln!(server_config, "Address = {}", self.prefix.int(0))?;
 
         // ListenPort
-        if let Some(port) = server.listen_port {
-            writeln!(server_config, "ListenPort = {}", port)?;
+        if let Some(v) = server.listen_port {
+            writeln!(server_config, "ListenPort = {}", v)?;
         }
 
         // FwMark
-        if let Some(mark) = server.fw_mark {
-            writeln!(server_config, "FwMark = {}", mark)?;
+        if let Some(v) = server.fwmark {
+            writeln!(server_config, "FwMark = {}", v)?;
         }
 
         // MTU
-        if let Some(mtu) = server.mtu {
-            writeln!(server_config, "MTU = {}", mtu)?;
+        if let Some(v) = server.mtu {
+            writeln!(server_config, "MTU = {}", v)?;
         }
 
         // Server Unbound config file
@@ -219,7 +212,7 @@ impl Config {
             writeln!(config, "[Interface]")?;
 
             // PrivateKey
-            writeln!(config, "PrivateKey = {}", peer.key)?;
+            writeln!(config, "PrivateKey = {}", peer.private_key)?;
 
             // Address
             writeln!(config, "Address = {}", self.prefix.int(*id))?;
@@ -233,7 +226,7 @@ impl Config {
             }
 
             // FwMark
-            if let Some(mark) = peer.fw_mark {
+            if let Some(mark) = peer.fwmark {
                 writeln!(config, "FwMark = {}", mark)?;
             }
 
@@ -246,10 +239,10 @@ impl Config {
             writeln!(config, "\n[Peer]")?;
 
             // PublicKey
-            writeln!(config, "PublicKey = {}", server.key.pubkey())?;
+            writeln!(config, "PublicKey = {}", server.private_key.pubkey())?;
 
             // PresharedKey
-            writeln!(config, "PresharedKey = {}", peer.psk)?;
+            writeln!(config, "PresharedKey = {}", peer.preshared_key)?;
 
             // AllowedIPs
             writeln!(config, "AllowedIPs = {}", self.prefix)?;
@@ -257,6 +250,11 @@ impl Config {
             // Endpoint
             if let Some(endpoint) = &server.endpoint {
                 writeln!(config, "Endpoint = {}", endpoint)?;
+            }
+
+            // PersistentKeepalive
+            if let Some(interval) = &peer.persistent_keepalive_interval {
+                writeln!(config, "PersistentKeepalive = {}", interval)?;
             }
 
             // Server
@@ -267,10 +265,10 @@ impl Config {
             writeln!(server_config, "[Peer]")?;
 
             // PublicKey
-            writeln!(server_config, "PublicKey = {}", peer.key.pubkey())?;
+            writeln!(server_config, "PublicKey = {}", peer.private_key.pubkey())?;
 
             // PresharedKey
-            writeln!(server_config, "PresharedKey = {}", peer.psk)?;
+            writeln!(server_config, "PresharedKey = {}", peer.preshared_key)?;
 
             // AllowedIPs
             writeln!(server_config, "AllowedIPs = {}", self.prefix.int(*id))?;

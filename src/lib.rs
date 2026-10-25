@@ -15,13 +15,19 @@ pub fn run() -> anyhow::Result<()> {
     }
 
     if !args.names.is_empty() {
-        if args.config.exists() {
-            eprintln!("Already generated peers.");
-            return Ok(());
-        }
         let config = Config::from(args.names);
-        config.write(args.config)?;
-        println!("Successfully generated peers!");
+        
+        if args.export {
+            config.export(args.output)?;
+            println!("Successfully exported peers!");
+        } else {
+            if args.config.exists() {
+                eprintln!("Already generated peers.");
+                return Ok(());
+            }
+            config.write(args.config)?;
+            println!("Successfully generated peers!");
+        }
         return Ok(());
     }
 

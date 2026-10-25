@@ -1,0 +1,58 @@
+{
+  "prefix": {
+    "addr": "fdd8:3b32:7b99:a8fb::",
+    "len": 64
+  },
+  "peers": {
+    "0": {
+      "name": "server",
+      "private_key": "4LlcG0WN5J4T0/WFhK5gPkHFVq/PkeYaG/Z85NkqLmU=",
+      "preshared_key": "Gh5cTjlFaBvJz1UCRw0GR5sliwP3lpJntjcclqpJGWo=",
+      "endpoint": "server.example.com:1234",
+      "listen_port": 51820,
+      "persistent_keepalive_interval": null,
+      "fwmark": null,
+      "mtu": null
+    },
+    "1": {
+      "name": "phone",
+      "private_key": "sNWhRqOekrZrebAFgTA8E9L9AK20QnnN+KizxmDTJ3w=",
+      "preshared_key": "hMCGGqPxHfIAr0edVXD8wQfJBQHCo+39Z39i+pkhmOA=",
+      "endpoint": null,
+      "listen_port": null,
+      "persistent_keepalive_interval": null,
+      "fwmark": null,
+      "mtu": 1280
+    },
+    "2": {
+      "name": "laptop",
+      "private_key": "cB8hdeM+GeLcQ3yxWm/D5KFfsOl8HBgey93zDnpRL3A=",
+      "preshared_key": "fj6DIoi5K/jG4KgHeV7pQoP9Jlbjx2QoySsFLdfh5XE=",
+      "endpoint": null,
+      "listen_port": null,
+      "persistent_keepalive_interval": 25,
+      "fwmark": null,
+      "mtu": null
+    },
+    "3": {
+      "name": "computer",
+      "private_key": "mK7ghGRZG6PpFnvohujtCj3gXt+J8RkzZywVQxL/tnU=",
+      "preshared_key": "tPs+GXIYVFm2jVWNXk5UnNJ2IL6YIHVj9gSZIvM2zfY=",
+      "endpoint": "192.168.1.10:51820",
+      "listen_port": 51820,
+      "persistent_keepalive_interval": null,
+      "fwmark": null,
+      "mtu": null
+    },
+    "4": {
+      "name": "backup",
+      "private_key": "kL5TGDxz0Leyq7Q20tWdcIHK7KQbes1NZNUVfKL4Fno=",
+      "preshared_key": "VC1dDwwJL6PKtGbBaVyeHQa2aQmGumTaoukGm8JI2A4=",
+      "endpoint": "backup.example.com:1234",
+      "listen_port": 51820,
+      "persistent_keepalive_interval": null,
+      "fwmark": null,
+      "mtu": null
+    }
+  }
+}

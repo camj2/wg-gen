@@ -22,7 +22,7 @@ pub struct Args {
         short,
         long,
         help = "Config file location",
-        default_value = "wireguard.json"
+        default_value = "./wireguard.json"
     )]
     pub config: PathBuf,
 
@@ -30,18 +30,21 @@ pub struct Args {
         short,
         long,
         help = "Output directory location",
-        default_value = "wireguard"
+        default_value = "./wireguard"
     )]
     pub output: PathBuf,
 
-    #[arg(short, long, help = "Export peers")]
+    #[arg(help = "Generate named peers.", value_name = "NAME")]
+    pub names: Vec<String>,
+
+    #[arg(short, long, help = "Generate unnamed peers.")]
+    pub total: Option<u64>,
+
+    #[arg(short, long, help = "Export peers to output directory.")]
     pub export: bool,
 
-    #[arg(short, long, help = "Generate ULA prefix")]
+    #[arg(short, long, help = "Generate ULA prefix and exit.")]
     pub generate: bool,
-
-    #[arg(help = "Peer name", value_name = "NAME")]
-    pub names: Vec<String>,
 }
 
 impl Args {
