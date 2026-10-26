@@ -5,83 +5,55 @@ pub const WG_DEFAULT_MTU: u16 = 1420;
 pub mod crypto;
 pub mod net;
 
-// use std::fmt::Write;
+use anyhow::{Context, bail};
 
-// use std::collections::HashMap;
 use std::collections::BTreeMap;
-// use std::fmt::Display;
 use std::fmt;
-
 use std::fs;
 use std::fs::File;
 use std::io::Write;
 use std::path::Path;
-// use std::path::PathBuf;
 
-use net::Ipv6Prefix;
+use net::{IpPrefix, Ipv6Prefix};
 
 use serde::{Deserialize, Serialize};
 use serde_json;
 
-// use crypto::{KeyPair, KeySecret};
 use wireguard_keys::{Privkey as PrivateKey, Secret as PresharedKey};
-
-use anyhow::{Context, Result};
 
 #[derive(Serialize, Deserialize)]
 pub struct Config {
-    // Network
-    prefix: Ipv6Prefix,
+    ip: IpPrefix,
 
-    // Peers
     peers: BTreeMap<u64, Peer>,
 }
 
 #[derive(Serialize, Deserialize)]
 struct Peer {
-    // Meta
     name: String,
 
-    // Keys
     private_key: PrivateKey,
     preshared_key: PresharedKey,
 
-    // Network
     endpoint: Option<String>,
     listen_port: Option<u16>,
     persistent_keepalive_interval: Option<u16>,
     fwmark: Option<u32>,
     mtu: Option<u16>,
-}
-
-impl fmt::Display for Config {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let mut first = true;
-
-        for (id, peer) in &self.peers {
-            if !first {
-                write!(f, "\n")?;
-            }
-            first = false;
-
-            write!(f, "{}: {}", id, peer.name)?;
-        }
-
-        Ok(())
-    }
+    // Thought: add dns option
 }
 
 impl Config {
     pub fn new() -> Self {
-        let prefix = Ipv6Prefix::new().generate_ula().generate_network();
+        let ip = IpPrefix::from(Ipv6Prefix::new().generate_ula().generate_network());
 
         let peers: BTreeMap<u64, Peer> = BTreeMap::new();
 
-        Self { prefix, peers }
+        Self { ip, peers }
     }
 
-    pub fn add<T: ToString>(&mut self, name: T) -> Result<()> {
-        // Find lowest next available entry. Bail if none left.
+    pub fn add<T: ToString>(&mut self, name: T) -> anyhow::Result<()> {
+        // Find lowest available entry. Bail if none left.
         let id = (u64::MIN..u64::MAX)
             .into_iter()
             .find(|k| !self.peers.contains_key(k))
@@ -105,13 +77,13 @@ impl Config {
         Ok(())
     }
 
-    pub fn del<T: ToString>(&mut self, name: T) -> Result<()> {
+    pub fn del<T: ToString>(&mut self, name: T) -> anyhow::Result<()> {
         self.peers.retain(|_, peer| peer.name != name.to_string());
 
         Ok(())
     }
 
-    pub fn from(path: &Path) -> Result<Self> {
+    pub fn from(path: &Path) -> anyhow::Result<Self> {
         let file_contents = fs::read_to_string(&path)?;
 
         let config: Self = serde_json::from_str(&file_contents)?;
@@ -119,21 +91,31 @@ impl Config {
         Ok(config)
     }
 
-    pub fn write(&self, path: &Path) -> Result<()> {
+    pub fn write(&self, path: &Path) -> anyhow::Result<()> {
         let json = serde_json::to_string_pretty(&self)?;
 
+        // TO-DO: Create file handle
         fs::write(&path, &json)?;
 
         Ok(())
     }
 
-    pub fn export(&self, path: &Path) -> Result<()> {
-        // First peer is considered the "server" peer, remainder are "client" peers.
-        let server = self
+    // Build WireGuard config files.
+    pub fn export(&self, path: &Path) -> anyhow::Result<()> {
+        // First entry is considered the "server" peer, remainder are "client" peers.
+        let server_entry = self
             .peers
-            .get(&u64::MIN)
-            .context("Peer with index of 0 not found.")?;
-        // TO-DO: Check for duplicate names!
+            .first_key_value()
+            .context("First peer should exist.")?;
+        let server_id = *server_entry.0;
+        let server = server_entry.1;
+
+        let prefix = match &self.ip {
+            IpPrefix::V4(ip) => bail!("IPv4: {}: not supported for now.", ip),
+            IpPrefix::V6(ip) => ip,
+        };
+
+        // TO-DO: Check for duplicate names! Thought: Use BTreeMap for Unbound config? Reverse HashMap?
 
         // Create export directory
         fs::create_dir_all(&path)?;
@@ -148,7 +130,7 @@ impl Config {
         writeln!(server_config, "PrivateKey = {}", server.private_key)?;
 
         // Address
-        writeln!(server_config, "Address = {}", self.prefix.int(0))?; // TO-DO: get id rather than assuming zero!
+        writeln!(server_config, "Address = {}", prefix.int(server_id))?;
 
         // ListenPort
         if let Some(v) = server.listen_port {
@@ -167,6 +149,7 @@ impl Config {
 
         // Server Unbound config file
         let mut unbound_config = File::create(path.join("unbound.conf"))?;
+        // TO-DO: rename to unbound_buf and write depending whether or not AAAA or A, IpPrefixDual ?
 
         // Unbound
         writeln!(unbound_config, "# {}", server.name)?;
@@ -176,23 +159,26 @@ impl Config {
             unbound_config,
             "local-data: '{} AAAA {}'",
             server.name,
-            self.prefix.int(0).addr
+            prefix.int(server_id).addr
         )?;
 
         // PTR Record
         writeln!(
             unbound_config,
             "local-data-ptr: '{} {}'",
-            self.prefix.int(0).addr,
-            server.name,
+            prefix.int(server_id).addr,
+            server.name
         )?;
 
         for (id, peer) in &self.peers {
-            if *id == 0 {
+            let peer_id = *id;
+
+            // Thought: Generate "server" peer here instead of above
+            if peer_id == server_id {
                 continue;
             }
 
-            let name = format!("{}-{}.conf", id, peer.name);
+            let name = format!("{}-{}.conf", peer_id, peer.name);
 
             // Client WireGuard config file
             let mut config = File::create(&path.join(name))?;
@@ -208,10 +194,10 @@ impl Config {
             writeln!(config, "PrivateKey = {}", peer.private_key)?;
 
             // Address
-            writeln!(config, "Address = {}", self.prefix.int(*id))?;
+            writeln!(config, "Address = {}", prefix.int(peer_id))?;
 
             // DNS
-            writeln!(config, "DNS = {}", self.prefix.int(0).addr)?;
+            writeln!(config, "DNS = {}", prefix.int(server_id).addr)?;
 
             // ListenPort
             if let Some(port) = peer.listen_port {
@@ -238,7 +224,7 @@ impl Config {
             writeln!(config, "PresharedKey = {}", peer.preshared_key)?;
 
             // AllowedIPs
-            writeln!(config, "AllowedIPs = {}", self.prefix)?;
+            writeln!(config, "AllowedIPs = {}", prefix)?;
 
             // Endpoint
             if let Some(endpoint) = &server.endpoint {
@@ -264,7 +250,7 @@ impl Config {
             writeln!(server_config, "PresharedKey = {}", peer.preshared_key)?;
 
             // AllowedIPs
-            writeln!(server_config, "AllowedIPs = {}", self.prefix.int(*id))?;
+            writeln!(server_config, "AllowedIPs = {}", prefix.int(peer_id))?;
 
             // Endpoint
             if let Some(endpoint) = &peer.endpoint {
@@ -279,16 +265,32 @@ impl Config {
                 unbound_config,
                 "local-data: '{} AAAA {}'",
                 peer.name,
-                self.prefix.int(*id).addr
+                prefix.int(peer_id).addr
             )?;
 
             // PTR Record
             writeln!(
                 unbound_config,
                 "local-data-ptr: '{} {}'",
-                self.prefix.int(*id).addr,
+                prefix.int(peer_id).addr,
                 peer.name,
             )?;
+        }
+        Ok(())
+    }
+}
+
+impl fmt::Display for Config {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut first = true;
+
+        for (id, peer) in &self.peers {
+            if !first {
+                write!(f, "\n")?;
+            }
+            first = false;
+
+            write!(f, "{}: {}", id, peer.name)?;
         }
         Ok(())
     }

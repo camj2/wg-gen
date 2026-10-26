@@ -53,6 +53,18 @@ pub enum IpPrefix {
 //     }
 // }
 
+impl From<Ipv4Prefix> for IpPrefix {
+    fn from(ipv4: Ipv4Prefix) -> IpPrefix {
+        IpPrefix::V4(ipv4)
+    }
+}
+
+impl From<Ipv6Prefix> for IpPrefix {
+    fn from(ipv6: Ipv6Prefix) -> IpPrefix {
+        IpPrefix::V6(ipv6)
+    }
+}
+
 impl Ipv4Prefix {
     pub fn new() -> Self {
         let octets = [0u8; 4];
