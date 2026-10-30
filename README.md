@@ -6,8 +6,8 @@ This means no risk of CIDR overlapping.
 Useful for private roaming interconnected networks.
 
 **Android**:
-When connected to an IPv4-only network, Android supports DNS queries sent over an IPv6-only
-[split VPN](https://en.wikipedia.org/wiki/Split_tunneling).
+When connected to an IPv4-only network,
+Android supports DNS queries sent over an IPv6-only split VPN.
 *However*,
 any other traffic sent over the tunnel, such as HTTP requests, do not work.
 This would require the device be connected to a dual stack IPv4/IPv6 network.
@@ -26,22 +26,22 @@ install -m 755 target/release/wg-gen /usr/local/bin/
 ## Usage
 
 ```sh
-pb --help
+wg-gen --help
 ```
 
 Generate peers:
 
 ```sh
-wg-gen server phone laptop computer backup
+wg-gen -w server phone laptop computer backup
 ```
 
-Set additional options in [`wireguard.json`](doc/wireguard.json) and export:
+Set additional options in [`wireguard.json`](docs/wireguard.json) and export:
 
 ```
 wg-gen -e
 ```
 
-[`wireguard.conf`](doc/wireguard/wireguard.conf) and [`unbound.conf`](doc/wireguard/unbound.conf)
+[`wireguard.conf`](docs/wireguard/wireguard.conf) and [`unbound.conf`](docs/wireguard/unbound.conf)
 are the "server" peer, remainder are "client" peers.
 
 ## Help
@@ -60,6 +60,7 @@ See `man 8 wg wg-quick` for more config options.
 
 * [IPv6](https://en.wikipedia.org/wiki/IPv6_address)
 * [Unique Local Address](https://en.wikipedia.org/wiki/Unique_local_address)
+* [Split Tunnel](https://en.wikipedia.org/wiki/Split_tunneling)
 * [Unbound](https://www.nlnetlabs.nl/projects/unbound/about/)
 * [WireGuard](https://www.wireguard.com/)
 * [WireGuard Cross-platform Userspace Implementation](https://www.wireguard.com/xplatform/)

@@ -52,7 +52,7 @@ impl Config {
         Self { ip, peers }
     }
 
-    pub fn add<T: ToString>(&mut self, name: T) -> anyhow::Result<()> {
+    pub fn add<T: fmt::Display>(&mut self, name: T) -> anyhow::Result<()> {
         // Find lowest available entry. Bail if none left.
         let id = (u64::MIN..u64::MAX)
             .into_iter()
@@ -77,7 +77,7 @@ impl Config {
         Ok(())
     }
 
-    pub fn del<T: ToString>(&mut self, name: T) -> anyhow::Result<()> {
+    pub fn del<T: fmt::Display>(&mut self, name: T) -> anyhow::Result<()> {
         self.peers.retain(|_, peer| peer.name != name.to_string());
 
         Ok(())
@@ -118,7 +118,7 @@ impl Config {
         // TO-DO: Check for duplicate names! Thought: Use BTreeMap for Unbound config? Reverse HashMap?
 
         // Create export directory
-        fs::create_dir_all(&path)?;
+        fs::create_dir(&path)?;
 
         // Server WireGuard config file
         let mut server_config = File::create(path.join("wireguard.conf"))?;
@@ -292,6 +292,11 @@ impl fmt::Display for Config {
 
             write!(f, "{}: {}", id, peer.name)?;
         }
+
+        if first {
+            write!(f, "None found.")?;
+        }
+
         Ok(())
     }
 }
