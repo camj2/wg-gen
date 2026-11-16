@@ -22,7 +22,7 @@ pub struct Args {
     pub names: Vec<String>,
 
     #[arg(short, long, help = "Generate unnamed peers.")]
-    pub total: Vec<u64>,
+    pub total: Option<u64>,
 
     #[arg(short, long, help = "Delete peer.", value_name = "NAME")]
     pub delete: Vec<String>,

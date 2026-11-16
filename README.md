@@ -5,6 +5,7 @@ Each peer is assigned an IPv6 ULA prefix.
 This means no risk of CIDR overlapping.
 Useful for private roaming interconnected networks.
 
+<!--
 **Android**:
 When connected to an IPv4-only network,
 Android supports DNS queries sent over an IPv6-only split VPN.
@@ -12,6 +13,7 @@ Android supports DNS queries sent over an IPv6-only split VPN.
 any other traffic sent over the tunnel, such as HTTP requests, do not work.
 This would require the device be connected to a dual stack IPv4/IPv6 network.
 This appears to be a limitation with the Android network stack (more research required).
+-->
 
 ## Build
 

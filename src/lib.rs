@@ -1,61 +1,56 @@
-pub mod wireguard;
-use wireguard::{Config, net::Ipv6Prefix};
+mod cli;
+pub use cli::Args;
 
-pub mod cli;
-use cli::Args;
+mod net;
+pub use net::{IpPrefix, Ipv4Prefix, Ipv6Prefix};
 
-// Thought: anyhow::Result<()>, thiserror or custom Error type (research)
-pub fn run() -> anyhow::Result<()> {
+mod error;
+pub use error::{Error, Result};
+
+mod peer;
+pub use peer::Config;
+
+pub fn run() -> Result<()> {
     let args = Args::get();
 
-    // Generate prefix, print and exit.
     if args.generate {
-        let prefix = Ipv6Prefix::new().generate_ula();
+        let prefix = Ipv6Prefix::default().generate_ula();
         println!("{}", prefix);
         return Ok(());
     }
 
-    // Deserialize existing config file, otherwise initialize new config.
     let mut config = if args.config.exists() {
-        Config::from(&args.config)?
+        Config::from_path(&args.config)?
     } else {
         Config::new()
     };
 
-    // Add named peers to config.
-    for name in args.names {
-        config.add(&name)?;
-        println!("Added '{}'.", &name);
-    }
-
-    // Add unnamed peers to config.
-    for total in args.total {
-        let range = u64::MIN..total;
-
-        for name in range {
-            config.add(&name)?;
-            println!("Added '{}'.", &name);
-        }
-    }
-
-    // Delete peers.
     for name in args.delete {
         config.del(&name)?;
         println!("Deleted '{}'.", &name);
     }
 
-    // Display config.
-    println!("{}", &config);
+    for name in args.names {
+        config.add(&name)?;
+        println!("Added '{}'.", &name);
+    }
 
-    // Save config file.
+    if let Some(total) = args.total {
+        for name in u64::MIN..total {
+            config.add(&name)?;
+            println!("Added '{}'.", &name);
+        }
+    }
+
+    config.print();
+
     if args.write {
-        config.write(&args.config)?;
+        config.write_to_path(&args.config)?;
         println!("Successfully generated peers!");
     }
 
-    // Generate WireGuard config files.
     if args.export {
-        config.export(&args.output)?;
+        config.export_to_path(&args.output)?;
         println!("Successfully exported peers!");
     }
 
